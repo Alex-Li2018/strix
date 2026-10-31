@@ -231,10 +231,28 @@ class ViewerSettings(BaseSettings):
     app_url: str = Field(default="https://app.strix.ai", alias="STRIX_APP_URL")
 
 
+class ReportSettings(BaseSettings):
+    model_config = _BASE_CONFIG
+
+    # Language the agent writes customer-facing report prose in (free-form
+    # name understood by the model, e.g. "Simplified Chinese", "Japanese").
+    # Unset keeps the default: reports follow the prompts' language (English).
+    # Prose only — code, payloads, identifiers, severity labels, and CVSS
+    # vectors are never translated.
+    language: str | None = Field(default=None, alias="STRIX_REPORT_LANGUAGE")
+
+    @field_validator("language")
+    @classmethod
+    def _blank_language_is_none(cls, value: str | None) -> str | None:
+        cleaned = value.strip() if isinstance(value, str) else value
+        return cleaned or None
+
+
 class Settings(BaseSettings):
     model_config = _BASE_CONFIG
 
     llm: LlmSettings = Field(default_factory=LlmSettings)
+    report: ReportSettings = Field(default_factory=ReportSettings)
     dedupe: DedupeSettings = Field(default_factory=DedupeSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     context: ContextSettings = Field(default_factory=ContextSettings)

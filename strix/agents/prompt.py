@@ -7,6 +7,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from strix.config import load_settings
 from strix.skills import get_available_skills, load_skills, skill_search_dirs
 from strix.utils.resource_paths import get_strix_resource_path
 
@@ -134,6 +135,7 @@ def render_system_prompt(
             shared_skill_names=[name for name in skill_content if name in shared],
             requested_skill_names=[name for name in skill_content if name not in shared],
             available_skills=get_available_skills(),
+            report_language=load_settings().report.language,
             interactive=interactive,
             parallel_tool_calls=parallel_tool_calls,
             is_root=is_root,
