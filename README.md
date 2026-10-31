@@ -137,6 +137,25 @@ docker run --rm --network host \
 
 The image plays both roles: started manually it runs `strix` (the entrypoint auto-points `STRIX_IMAGE` at itself and uploads local sources into sandboxes instead of bind-mounting host paths); spawned per scan it acts as the sandbox. Mounting the Docker socket grants the container control over the host's Docker daemon — run it only on hosts you control. Build on (or for) the server's architecture; scanning local code directories works from any path inside the container, but reports land under `/workspace`, so mount it to keep them.
 
+### Java toolkit & private Maven/Gradle mirrors
+
+The all-in-one image adds a Java security layer on top of the sandbox toolchain: OpenJDK 17, Maven, Gradle, jadx, SpotBugs + FindSecBugs, CFR, OWASP Dependency-Check, ysoserial, marshalsec, and JNDI-Exploit-Kit — matched by the `java`, `jadx`, `spotbugs_findsecbugs`, `dependency_check`, and `java_deserialization` agent skills.
+
+To route `mvn`/`gradle` dependency resolution through a private repository (Nexus/Artifactory), pass the mirror settings — they are forwarded into every sandbox and rendered as `~/.m2/settings.xml` (`mirrorOf external:*`) and `~/.gradle/init.gradle` automatically:
+
+```bash
+docker run --rm --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e STRIX_LLM='openrouter/z-ai/glm-5.3' -e LLM_API_KEY='...' \
+  -e MAVEN_MIRROR_URL='https://nexus.example.com/repository/maven-public/' \
+  -e MAVEN_MIRROR_ID='corp-nexus' \
+  -e MAVEN_MIRROR_USER='ci' -e MAVEN_MIRROR_PASS='...' \
+  -v "$PWD/strix_runs:/workspace/strix_runs" \
+  strix-allinone:mytag -n -t ./java-project --scan-mode quick
+```
+
+`GRADLE_MIRROR_URL` overrides the Gradle mirror separately (defaults to `MAVEN_MIRROR_URL`). Note the credentials live in sandbox container environments — prefer an anonymous-read mirror if that matters for your threat model.
+
 ---
 
 ## ☁️ Strix Cloud

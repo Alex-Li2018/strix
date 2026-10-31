@@ -9,6 +9,10 @@
 #    container's own image so spawned sandboxes reuse it, then exec `strix`.
 set -e
 
+# Render ~/.m2/settings.xml + ~/.gradle/init.gradle when private-mirror env
+# vars are present (MAVEN_MIRROR_URL etc.). No-op with defaults otherwise.
+/usr/local/bin/strix-java-repos || echo "WARNING: java repo config render failed" >&2
+
 if [ -n "${STRIX_SANDBOX_ROLE:-}" ]; then
   exec /usr/local/bin/docker-entrypoint.sh "$@"
 fi

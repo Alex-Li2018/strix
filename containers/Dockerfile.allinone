@@ -26,6 +26,94 @@
 ARG SANDBOX_BASE=ghcr.io/usestrix/strix-sandbox:1.3.1
 FROM ${SANDBOX_BASE}
 
+# ---------------------------------------------------------------------------
+# Java security toolkit (all-in-one only; not in the published sandbox image)
+# ---------------------------------------------------------------------------
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openjdk-17-jdk maven && \
+    (apt-get install -y --no-install-recommends jadx || \
+      echo "WARNING: jadx not in apt; install from GitHub releases manually") && \
+    rm -rf /var/lib/apt/lists/*
+
+# Kali's apt gradle lags far behind; use the official distribution.
+ARG GRADLE_VERSION=8.14
+RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+      -o /tmp/gradle.zip && \
+    unzip -q /tmp/gradle.zip -d /opt && \
+    ln -s "/opt/gradle-${GRADLE_VERSION}/bin/gradle" /usr/local/bin/gradle && \
+    rm /tmp/gradle.zip
+
+# Arch-independent JAVA_HOME (the apt JDK path embeds the arch triplet).
+RUN ln -sfn "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /opt/java-home
+ENV JAVA_HOME=/opt/java-home
+
+# SpotBugs + FindSecBugs: bytecode SAST for compiled targets.
+ARG SPOTBUGS_VERSION=4.8.6
+ARG FINDSECBUGS_VERSION=1.13.0
+RUN curl -fsSL "https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.zip" \
+      -o /tmp/spotbugs.zip && \
+    unzip -q /tmp/spotbugs.zip -d /opt && \
+    ln -s "/opt/spotbugs-${SPOTBUGS_VERSION}/bin/spotbugs" /usr/local/bin/spotbugs && \
+    rm /tmp/spotbugs.zip && \
+    curl -fsSL "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/${FINDSECBUGS_VERSION}/findsecbugs-plugin-${FINDSECBUGS_VERSION}.jar" \
+      -o "/opt/spotbugs-${SPOTBUGS_VERSION}/plugin/findsecbugs-plugin.jar"
+
+# CFR: single-jar decompiler, maven-central URL is stable.
+ARG CFR_VERSION=0.152
+RUN mkdir -p /opt/java-tools && \
+    curl -fsSL "https://repo1.maven.org/maven2/org/benf/cfr/${CFR_VERSION}/cfr-${CFR_VERSION}.jar" \
+      -o /opt/java-tools/cfr.jar && \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/cfr.jar "$@"\n' > /usr/local/bin/cfr && \
+    chmod +x /usr/local/bin/cfr
+
+# OWASP Dependency-Check (SCA). Best-effort: a failed download warns but does
+# not break the build; trivy still covers dependency CVEs.
+ARG DEPCHECK_VERSION=12.1.0
+RUN if curl -fsSL "https://github.com/jeremylong/DependencyCheck/releases/download/v${DEPCHECK_VERSION}/dependency-check-${DEPCHECK_VERSION}.zip" \
+      -o /tmp/depcheck.zip; then \
+      unzip -q /tmp/depcheck.zip -d /opt && \
+      ln -s "/opt/dependency-check/bin/dependency-check.sh" /usr/local/bin/dependency-check && \
+      rm /tmp/depcheck.zip; \
+    else \
+      echo "WARNING: Dependency-Check download failed; skipping (trivy remains available)"; \
+    fi
+
+# ysoserial + marshalsec: built from source for current gadget chains. Build
+# caches are dropped in the same layer. Requires maven central to be reachable
+# at IMAGE BUILD time.
+RUN set -eux; \
+    git clone --depth 1 https://github.com/frohoff/ysoserial /tmp/ysoserial && \
+    (cd /tmp/ysoserial && mvn -q -DskipTests package) && \
+    { cp /tmp/ysoserial/target/ysoserial-*-all.jar /opt/java-tools/ysoserial.jar 2>/dev/null || \
+      cp /tmp/ysoserial/target/ysoserial-*-jar-with-dependencies.jar /opt/java-tools/ysoserial.jar; } && \
+    git clone --depth 1 https://github.com/mbechler/marshalsec /tmp/marshalsec && \
+    (cd /tmp/marshalsec && mvn -q -DskipTests package) && \
+    { cp /tmp/marshalsec/target/marshalsec-*-jar-with-dependencies.jar /opt/java-tools/marshalsec.jar 2>/dev/null || \
+      cp /tmp/marshalsec/target/marshalsec-*-all.jar /opt/java-tools/marshalsec.jar; }; \
+    rm -rf /tmp/ysoserial /tmp/marshalsec /root/.m2; \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/ysoserial.jar "$@"\n' > /usr/local/bin/ysoserial && \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/marshalsec.jar "$@"\n' > /usr/local/bin/marshalsec && \
+    chmod +x /usr/local/bin/ysoserial /usr/local/bin/marshalsec
+
+# JNDI-Exploit-Kit: best-effort (release assets on forks move around).
+ARG JNDIKIT_VERSION=1.6
+RUN if curl -fsSL "https://github.com/beichengzk/JNDI-Exploit-Kit/releases/download/v${JNDIKIT_VERSION}/JNDI-Exploit-Kit-${JNDIKIT_VERSION}-snAPSHOT-all.jar" \
+      -o /opt/java-tools/jndi-exploit-kit.jar; then \
+      printf '#!/bin/bash\nexec java -jar /opt/java-tools/jndi-exploit-kit.jar "$@"\n' > /usr/local/bin/jndi-exploit-kit && \
+      chmod +x /usr/local/bin/jndi-exploit-kit; \
+    else \
+      echo "WARNING: JNDI-Exploit-Kit download failed; skipping"; \
+    fi
+
+# Private Maven/Gradle mirror support: rendered at container start by the
+# entrypoint from MAVEN_MIRROR_*/GRADLE_MIRROR_URL env vars.
+COPY containers/strix-java-repos.sh /usr/local/bin/strix-java-repos
+RUN chmod +x /usr/local/bin/strix-java-repos
+
+# ---------------------------------------------------------------------------
+# strix orchestrator
+# ---------------------------------------------------------------------------
 USER root
 
 # Install the strix orchestrator into its own venv, isolated from the sandbox

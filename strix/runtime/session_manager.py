@@ -268,6 +268,31 @@ async def _resolve_extra_file_archive(
     return build_extra_file_archive(files, local_sources) if files else None
 
 
+# Forwarded so the all-in-one image's entrypoint can render ~/.m2/settings.xml
+# and ~/.gradle/init.gradle pointing mvn/gradle at a private mirror.
+_JAVA_MIRROR_ENV_KEYS = (
+    "MAVEN_MIRROR_URL",
+    "MAVEN_MIRROR_ID",
+    "MAVEN_MIRROR_USER",
+    "MAVEN_MIRROR_PASS",
+    "GRADLE_MIRROR_URL",
+)
+
+
+def _java_mirror_env() -> dict[str, str]:
+    """Copy private Maven/Gradle mirror settings into sandbox environments.
+
+    Only keys explicitly set in the orchestrator environment are forwarded,
+    so hosts without a private mirror see no extra variables.
+    """
+    env: dict[str, str] = {}
+    for key in _JAVA_MIRROR_ENV_KEYS:
+        value = os.environ.get(key, "").strip()
+        if value:
+            env[key] = value
+    return env
+
+
 def _plan_source_transport(
     backend_name: str, upload_sources: bool, local_sources: list[dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], dict[str | Path, BaseEntry]]:
@@ -340,6 +365,7 @@ async def create_or_reuse(
                 # container was spawned as a sandbox, so it must run the
                 # caido/proxy bootstrap instead of the ``strix`` orchestrator.
                 "STRIX_SANDBOX_ROLE": "1",
+                **_java_mirror_env(),
                 "http_proxy": container_caido_url,
                 "https_proxy": container_caido_url,
                 "ALL_PROXY": container_caido_url,

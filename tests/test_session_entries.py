@@ -621,3 +621,74 @@ async def test_sandboxes_carry_the_sandbox_role_signal(
 
     env = await captured["manifest"].environment.resolve()
     assert env["STRIX_SANDBOX_ROLE"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_java_mirror_env_is_forwarded_to_sandboxes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MAVEN_MIRROR_*/GRADLE_MIRROR_URL set in the orchestrator environment are
+    forwarded into every sandbox so the image's entrypoint can render
+    ~/.m2/settings.xml and ~/.gradle/init.gradle for private mirrors."""
+    monkeypatch.setenv("MAVEN_MIRROR_URL", "https://nexus.corp.example/maven-public/")
+    monkeypatch.setenv("MAVEN_MIRROR_ID", "corp-nexus")
+    monkeypatch.setenv("MAVEN_MIRROR_USER", "ci")
+    monkeypatch.setenv("MAVEN_MIRROR_PASS", "s3cret")
+    captured: dict[str, Any] = {}
+
+    async def _backend(**kwargs: Any) -> tuple[Any, Any]:
+        captured.update(kwargs)
+        return _Client(), _Session()
+
+    scan_id = "java-mirror-env"
+    backend_name = f"test-{scan_id}"
+    _use_backend(monkeypatch, backend_name, _backend, supports_bind_mounts=True)
+    try:
+        bundle = await session_manager.create_or_reuse(
+            scan_id, image="img", local_sources=[_source("repo", str(tmp_path))]
+        )
+        await bundle["caido_client"].aclose()
+    finally:
+        await session_manager.cleanup(scan_id)
+        _forget_backend(backend_name)
+
+    env = await captured["manifest"].environment.resolve()
+    assert env["MAVEN_MIRROR_URL"] == "https://nexus.corp.example/maven-public/"
+    assert env["MAVEN_MIRROR_ID"] == "corp-nexus"
+    assert env["MAVEN_MIRROR_USER"] == "ci"
+    assert env["MAVEN_MIRROR_PASS"] == "s3cret"
+
+
+@pytest.mark.asyncio
+async def test_no_java_mirror_env_keys_when_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unset mirror vars must not pollute the sandbox environment."""
+    for key in (
+        "MAVEN_MIRROR_URL",
+        "MAVEN_MIRROR_ID",
+        "MAVEN_MIRROR_USER",
+        "MAVEN_MIRROR_PASS",
+        "GRADLE_MIRROR_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    captured: dict[str, Any] = {}
+
+    async def _backend(**kwargs: Any) -> tuple[Any, Any]:
+        captured.update(kwargs)
+        return _Client(), _Session()
+
+    scan_id = "java-mirror-unset"
+    backend_name = f"test-{scan_id}"
+    _use_backend(monkeypatch, backend_name, _backend, supports_bind_mounts=True)
+    try:
+        bundle = await session_manager.create_or_reuse(
+            scan_id, image="img", local_sources=[_source("repo", str(tmp_path))]
+        )
+        await bundle["caido_client"].aclose()
+    finally:
+        await session_manager.cleanup(scan_id)
+        _forget_backend(backend_name)
+
+    env = await captured["manifest"].environment.resolve()
+    assert not any(key.startswith(("MAVEN_MIRROR_", "GRADLE_MIRROR_")) for key in env)
