@@ -89,7 +89,11 @@ docker images strix-allinone                          # 确认 <tag> 存在
 
 ## 三、启动扫描
 
-### 3.1 URL 目标（黑盒 / live 扫描）
+### 3.1 典型场景：本地源码 + 已启动的服务（GLM 模型 + 中文报告）
+
+源码目录挂进容器（`-t` 用**容器内路径**），同一份代码起的服务直接给 URL——
+`-t` 可重复指定，源码 + 运行地址组合 = 白盒审查 + 实测验证一起跑；
+模型走智谱官方 API，报告叙述用中文：
 
 ```bash
 mkdir -p strix_runs   # 报告输出目录
@@ -98,15 +102,49 @@ docker run --rm -it --network host \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --group-add "$(stat -c %g /var/run/docker.sock)" \
   -e STRIX_IMAGE='strix-allinone:<tag>' \
-  -e STRIX_LLM='openai/<模型名>' \
-  -e LLM_API_BASE='http://<内网LLM地址>:<端口>/v1' \
-  -e LLM_API_KEY='<key或任意非空>' \
+  -e STRIX_LLM='openai/glm-5.3' \
+  -e LLM_API_BASE='https://open.bigmodel.cn/api/paas/v4' \
+  -e LLM_API_KEY='<智谱API Key>' \
+  -e STRIX_REPORT_LANGUAGE='简体中文' \
+  -v "$PWD/strix_runs:/workspace/strix_runs" \
+  -v /本地项目路径:/workspace/target-src:ro \
+  strix-allinone:<tag> \
+  -n -t /workspace/target-src -t http://localhost:8080 \
+     --scan-mode quick --max-budget 10
+```
+
+只想审代码就删掉第二个 `-t`；只想黑盒打服务就删掉第一个 `-t` 和源码挂载（见 3.2）。
+服务地址按实际改（`--network host` 下容器与宿主机同网络，本机服务就是 `localhost:端口`，
+内网服务直接写内网 IP）。
+
+要点：
+
+- 源码**只读挂载**即可——entrypoint 自动设置 `STRIX_RUNTIME_UPLOAD_SOURCES=1`，
+  源码以文件方式送入沙箱，不依赖宿主机路径映射
+- `openai/glm-5.3` 的 `openai/` 前缀 = 按 OpenAI 协议调用（GLM 兼容该协议），
+  配合 `LLM_API_BASE` 指到智谱官方端点；key 用智谱平台的 API Key
+- `STRIX_REPORT_LANGUAGE` 只翻译**叙述文字**，代码/payload/标识符/CVSS 向量保持原样
+- ⚠ **中文报告需要镜像含提交 `a2a74328`（即 `javatest2` 及以后）**。旧 `javatest`
+  会忽略该变量（报告仍是英文），且还需要额外挂载 `-v /usr/bin/true:/usr/local/bin/docker:ro`
+  才能通过 docker 预检（见第五节常见问题）
+
+### 3.2 URL 目标（黑盒 / live 扫描，服务已在本机或内网运行）
+
+```bash
+docker run --rm -it --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
+  -e STRIX_IMAGE='strix-allinone:<tag>' \
+  -e STRIX_LLM='openai/glm-5.3' \
+  -e LLM_API_BASE='https://open.bigmodel.cn/api/paas/v4' \
+  -e LLM_API_KEY='<智谱API Key>' \
+  -e STRIX_REPORT_LANGUAGE='简体中文' \
   -v "$PWD/strix_runs:/workspace/strix_runs" \
   strix-allinone:<tag> \
   -n -t http://<目标地址>:<端口> --scan-mode quick --max-budget 10
 ```
 
-参数说明：
+参数说明（两种模式通用）：
 
 | 参数 | 作用 |
 |---|---|
@@ -118,44 +156,31 @@ docker run --rm -it --network host \
 | `-v strix_runs` | 报告落宿主机，`--rm` 删容器后仍保留 |
 | 镜像名之后 | 全部透传给 `strix` CLI：`-n` headless 必加；`-t` 目标；`--scan-mode quick\|deep`；`--max-budget` LLM 花费上限（美元） |
 
-### 3.2 源码目标（白盒审查）
+### 3.3 LLM 配置
 
-把源码目录挂进容器，`-t` 用**容器内路径**：
-
-```bash
-docker run --rm -it --network host \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  --group-add "$(stat -c %g /var/run/docker.sock)" \
-  -e STRIX_IMAGE='strix-allinone:<tag>' \
-  -e STRIX_LLM='openai/<模型名>' -e LLM_API_BASE=... -e LLM_API_KEY=... \
-  -v "$PWD/strix_runs:/workspace/strix_runs" \
-  -v /path/to/项目源码:/workspace/target-src:ro \
-  strix-allinone:<tag> \
-  -n -t /workspace/target-src --scan-mode quick --max-budget 10
-```
-
-（entrypoint 会自动设置 `STRIX_RUNTIME_UPLOAD_SOURCES=1`，源码以文件方式送入沙箱，
-不依赖宿主机路径映射，只读挂载即可。）
-
-### 3.3 LLM 配置（内网私服）
-
-扫描完全由 LLM 驱动，必须有一个内网可达的 OpenAI 兼容接口
-（vLLM / Xinference / One-API / 内部网关均可）：
+扫描完全由 LLM 驱动，按模型来源三选一：
 
 ```bash
--e STRIX_LLM='openai/glm-5.3'                                  # openai/ 前缀 = 按 OpenAI 协议调用
--e LLM_API_BASE='http://10.x.x.x:8000/v1'                      # 私服地址（宿主机可达即可）
--e LLM_API_KEY='sk-xxx'                                        # 私服不校验时也给任意非空值
-# 可选：告知单价，让 run.json 的 cost 准确、预算控制有效
+# A. 智谱 GLM 官方 API（本手册主路径，目标机需能访问 open.bigmodel.cn）
+-e STRIX_LLM='openai/glm-5.3' \
+-e LLM_API_BASE='https://open.bigmodel.cn/api/paas/v4' \
+-e LLM_API_KEY='<智谱key>'
+
+# B. 内网私服（vLLM / Xinference / One-API / 内部网关，OpenAI 兼容）
+-e STRIX_LLM='openai/<模型名>' \
+-e LLM_API_BASE='http://10.x.x.x:8000/v1' \
+-e LLM_API_KEY='sk-xxx'          # 私服不校验时也给任意非空值
+
+# C. OpenRouter 中转
+-e STRIX_LLM='openrouter/z-ai/glm-5.3' -e LLM_API_KEY='sk-or-...'
+
+# 可选（任意方案）：告知单价，让 run.json 的 cost 准确、预算控制有效
 -e STRIX_LLM_INPUT_COST_PER_MTOK=... -e STRIX_LLM_OUTPUT_COST_PER_MTOK=...
 ```
 
-### 3.4 可选项
+### 3.4 其他可选项
 
 ```bash
-# 报告语言：叙述文字用中文（代码/payload/CVSS 向量保持原样），缺省英文
--e STRIX_REPORT_LANGUAGE='简体中文'
-
 # Java 目标编译走内网 Maven/Gradle 私服（自动生成 ~/.m2/settings.xml 和 ~/.gradle/init.gradle）
 -e MAVEN_MIRROR_URL='http://nexus.内网:8081/repository/maven-public/' \
 -e MAVEN_MIRROR_USER='...' -e MAVEN_MIRROR_PASS='...'        # 可选凭据
@@ -195,6 +220,7 @@ jq '.machine_observed.skills_exercised' "$RUN/coverage.json"   # 实际用到的
 | `permission denied .../docker.sock` | 缺 `--group-add "$(stat -c %g /var/run/docker.sock)"` |
 | `FAILED TO PULL ghcr.io/...` | `STRIX_IMAGE` 未设或与导入 tag 不一致 |
 | `DOCKER NOT INSTALLED` | 旧版镜像（< eb0f43d8）缺 docker-cli；新版已内置，出现即说明用的是旧 tag |
+| 旧镜像 docker 预检不过但 CLI 明明有 | 旧 `javatest` 的自检逻辑问题：加 `-v /usr/bin/true:/usr/local/bin/docker:ro` 绕过；或直接换 `javatest2` 及以后 |
 | 目标连不上 | 编排器已用 host 网络，等价于宿主机直连：先在宿主机 `curl` 目标验证可达性 |
 | LLM 超时/401 | 宿主机上 `curl $LLM_API_BASE/models` 验证私服可达与 key 有效 |
 | 成本显示异常 | 未设单价 env，或模型 id 与私服不匹配 |
