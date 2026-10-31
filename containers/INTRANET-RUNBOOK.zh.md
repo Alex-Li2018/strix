@@ -84,8 +84,8 @@ docker load -i /data/strix-allinone-<tag>.tar.gz     # 自动识别 gzip
 docker images strix-allinone                          # 确认 <tag> 存在
 ```
 
-内网机唯一的前提：**Docker daemon 已运行**，且当前用户能访问 `/var/run/docker.sock`
-（见下文 `--group-add`，root 用户可省略）。
+内网机唯一的前提：**Docker daemon 已运行**。容器内跑 strix 的是非 root 用户，
+所以 `--group-add` 对任何启动身份都**不可省**（见下文）。
 
 ## 三、启动扫描
 
@@ -153,7 +153,7 @@ docker run --rm -it --network host \
 |---|---|
 | `--network host` | 容器共享宿主机网络：编排器可直接访问宿主机可达的一切目标；被拉起的沙箱端口映射也天然可达。**必加** |
 | `-v docker.sock` | 编排器通过宿主机 daemon 拉起沙箱容器（DooD 模式） |
-| `--group-add $(stat -c %g ...)` | socket 属 root:docker（0660），容器内是非 root 用户，需附加 socket 的 GID 才有权限。root 启动可省 |
+| `--group-add $(stat -c %g ...)` | socket 属 root:docker（0660），容器内是非 root 用户，需附加 socket 的 GID 才有权限。**任何身份启动都不能省**（宿主机是 root 也没用——看的是容器内用户） |
 | `-e STRIX_IMAGE` | 沙箱复用本镜像。**必须显式指定且与导入的 tag 一致**，否则会尝试拉默认镜像导致 FAILED TO PULL |
 | `-e STRIX_LLM` 等 | 见 3.3 |
 | `-v strix_runs` | 报告落宿主机，`--rm` 删容器后仍保留 |
