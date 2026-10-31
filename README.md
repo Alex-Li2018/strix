@@ -117,6 +117,28 @@ Installed with pipx, uv, or pip? `strix --update` prints the matching upgrade co
 
 ---
 
+## 🐳 All-in-One Docker Image
+
+The default setup keeps the two pieces apart: the `strix` binary on the host (the orchestrator) and the `strix-sandbox` toolchain image it spawns per scan. The all-in-one image merges them — strix's code and Python dependencies layered on the full sandbox toolchain — so a host only needs **one image**:
+
+```bash
+# Build (one image, one command; from the repo root)
+scripts/docker-allinone.sh mytag
+
+# Scan with it (own server). --network host is required: the sandbox's Caido
+# proxy is reached on the host loopback, and the socket lets strix spawn
+# sandboxes that reuse this very image (nothing else gets pulled).
+docker run --rm --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e STRIX_LLM='openrouter/z-ai/glm-5.3' -e LLM_API_KEY='...' \
+  -v "$PWD/strix_runs:/workspace/strix_runs" \
+  strix-allinone:mytag -n -t https://example.com --scan-mode quick
+```
+
+The image plays both roles: started manually it runs `strix` (the entrypoint auto-points `STRIX_IMAGE` at itself and uploads local sources into sandboxes instead of bind-mounting host paths); spawned per scan it acts as the sandbox. Mounting the Docker socket grants the container control over the host's Docker daemon — run it only on hosts you control. Build on (or for) the server's architecture; scanning local code directories works from any path inside the container, but reports land under `/workspace`, so mount it to keep them.
+
+---
+
 ## ☁️ Strix Cloud
 
 Try the Strix full-stack penetration testing platform at **[app.strix.ai](https://app.strix.ai?utm_source=github&utm_medium=readme&utm_content=cloud_heading)** - sign up for free, connect your repos and domains, and launch a pentest in minutes.

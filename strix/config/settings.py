@@ -168,6 +168,11 @@ class RuntimeSettings(BaseSettings):
         alias="STRIX_IMAGE",
     )
     backend: str = Field(default="docker", alias="STRIX_RUNTIME_BACKEND")
+    # Upload local sources into the sandbox instead of bind-mounting host paths.
+    # Needed when the orchestrator itself runs in a container (all-in-one
+    # image): the Docker daemon resolves bind sources on the host filesystem,
+    # not inside the orchestrator container.
+    upload_sources: bool = Field(default=False, alias="STRIX_RUNTIME_UPLOAD_SOURCES")
     # Max screenshot/image tool outputs kept live per agent context (0 = none).
     max_context_images: int = Field(default=3, ge=0, alias="STRIX_MAX_CONTEXT_IMAGES")
 

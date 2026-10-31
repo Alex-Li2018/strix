@@ -268,6 +268,22 @@ async def _resolve_extra_file_archive(
     return build_extra_file_archive(files, local_sources) if files else None
 
 
+def _plan_source_transport(
+    backend_name: str, upload_sources: bool, local_sources: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str | Path, BaseEntry]]:
+    """Pick how local sources reach the sandbox: bind mounts (default on
+    bind-mount-capable backends) or manifest entries uploaded at bring-up.
+
+    Upload mode serves a containerized orchestrator (the all-in-one image):
+    the Docker daemon resolves bind-mount sources on the host filesystem, not
+    inside the orchestrator's container, so its paths don't map — the same
+    limit remote backends have.
+    """
+    if backend_supports_bind_mounts(backend_name) and not upload_sources:
+        return build_bind_mounts(local_sources), {}
+    return [], build_manifest_entries(local_sources)
+
+
 async def create_or_reuse(
     scan_id: str,
     *,
@@ -299,15 +315,13 @@ async def create_or_reuse(
         logger.info("Reusing existing sandbox session for scan %s", scan_id)
         return cached
 
-    backend_name = load_settings().runtime.backend
+    settings = load_settings()
+    backend_name = settings.runtime.backend
     backend = get_backend(backend_name)
 
-    if backend_supports_bind_mounts(backend_name):
-        bind_mounts = build_bind_mounts(local_sources)
-        entries: dict[str | Path, BaseEntry] = {}
-    else:
-        bind_mounts = []
-        entries = build_manifest_entries(local_sources)
+    bind_mounts, entries = _plan_source_transport(
+        backend_name, settings.runtime.upload_sources, local_sources
+    )
 
     # Caido runs as an in-container sidecar; HTTP(S) traffic from any
     # process started via ``session.exec`` (the SDK's Shell tool, etc.)
@@ -322,6 +336,10 @@ async def create_or_reuse(
                 "PYTHONUNBUFFERED": "1",
                 "HOST_GATEWAY": "host.docker.internal",
                 **_host_identity_env(),
+                # Role signal for the all-in-one image's entrypoint: this
+                # container was spawned as a sandbox, so it must run the
+                # caido/proxy bootstrap instead of the ``strix`` orchestrator.
+                "STRIX_SANDBOX_ROLE": "1",
                 "http_proxy": container_caido_url,
                 "https_proxy": container_caido_url,
                 "ALL_PROXY": container_caido_url,

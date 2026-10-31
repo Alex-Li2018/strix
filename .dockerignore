@@ -1,0 +1,31 @@
+# Keeps both image builds' context lean (containers/Dockerfile copies only
+# containers/* and strix/tools/proxy/caido_api.py; the all-in-one build copies
+# the strix package). Nothing here is needed inside an image.
+.git
+.gitignore
+.dockerignore
+.pre-commit-config.yaml
+.python-version
+.venv
+.env
+.claude
+.agents
+.mypy_cache
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+build
+dist
+strix_runs
+docs
+benchmarks
+tests
+skills
+scripts/install.sh
+scripts/docker.sh
+scripts/docker-allinone.sh
+# Viewer SPA source ships prebuilt under strix/interface/viewer/static/; the
+# Vite source tree (node_modules!) must not enter the context.
+strix/interface/viewer/frontend
+node_modules

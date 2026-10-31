@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 @dataclass
 class _RuntimeSettings:
     backend: str
+    upload_sources: bool = False
 
 
 @dataclass

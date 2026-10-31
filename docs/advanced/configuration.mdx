@@ -198,6 +198,10 @@ When remote vars are set, Strix dual-writes telemetry to both local JSONL and th
   Runtime backend for the sandbox environment.
 </ParamField>
 
+<ParamField path="STRIX_RUNTIME_UPLOAD_SOURCES" default="false" type="boolean">
+  Upload local source trees into the sandbox as archives instead of bind-mounting host paths. Needed when the orchestrator itself runs in a container (the all-in-one image): the Docker daemon resolves bind-mount sources on the host filesystem, not inside the orchestrator's container. The all-in-one image enables it by default via its entrypoint.
+</ParamField>
+
 ## Sandbox Configuration
 
 <ParamField path="STRIX_SANDBOX_EXECUTION_TIMEOUT" default="120" type="integer">

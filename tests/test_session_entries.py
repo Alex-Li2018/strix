@@ -315,6 +315,7 @@ def test_a_large_bundle_stays_one_archive() -> None:
 @dataclass
 class _RuntimeSettings:
     backend: str
+    upload_sources: bool = False
 
 
 @dataclass
@@ -375,10 +376,13 @@ def _use_backend(
     backend: Any,
     *,
     supports_bind_mounts: bool,
+    upload_sources: bool = False,
 ) -> None:
     register_backend(backend_name, backend, supports_bind_mounts=supports_bind_mounts)
     monkeypatch.setattr(session_manager, "bootstrap_caido", _no_caido)
-    settings = _Settings(runtime=_RuntimeSettings(backend=backend_name))
+    settings = _Settings(
+        runtime=_RuntimeSettings(backend=backend_name, upload_sources=upload_sources)
+    )
     monkeypatch.setattr(session_manager, "load_settings", lambda: settings)
 
 
@@ -552,3 +556,68 @@ def test_only_bind_mount_capable_backends_are_registered_as_such() -> None:
     finally:
         _BACKENDS.pop("e2b", None)
         _BIND_MOUNT_BACKENDS.discard("e2b")
+
+
+@pytest.mark.asyncio
+async def test_upload_sources_override_forces_manifest_upload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """STRIX_RUNTIME_UPLOAD_SOURCES: even a bind-mount-capable backend uploads
+    local sources as manifest entries. A containerized orchestrator (the
+    all-in-one image) cannot offer the daemon host paths to bind-mount — the
+    daemon resolves bind sources on the host, not inside the orchestrator
+    container — so it takes the same upload path remote backends use."""
+    captured: dict[str, Any] = {}
+    fake_session = _Session()
+
+    async def _backend(**kwargs: Any) -> tuple[Any, Any]:
+        captured.update(kwargs)
+        return _Client(), fake_session
+
+    scan_id = "upload-sources"
+    backend_name = f"test-{scan_id}"
+    _use_backend(
+        monkeypatch, backend_name, _backend, supports_bind_mounts=True, upload_sources=True
+    )
+    try:
+        bundle = await session_manager.create_or_reuse(
+            scan_id, image="img", local_sources=[_source("repo", str(tmp_path))]
+        )
+        await bundle["caido_client"].aclose()
+    finally:
+        await session_manager.cleanup(scan_id)
+        _forget_backend(backend_name)
+
+    manifest = captured["manifest"]
+    assert isinstance(manifest, Manifest)
+    assert captured["bind_mounts"] == []
+    assert isinstance(manifest.entries["repo"], LocalDir)
+
+
+@pytest.mark.asyncio
+async def test_sandboxes_carry_the_sandbox_role_signal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sandbox manifest sets STRIX_SANDBOX_ROLE=1 so the all-in-one image's
+    entrypoint knows it was spawned as a sandbox (run the caido/proxy bootstrap)
+    rather than manually started as the orchestrator (run ``strix``)."""
+    captured: dict[str, Any] = {}
+
+    async def _backend(**kwargs: Any) -> tuple[Any, Any]:
+        captured.update(kwargs)
+        return _Client(), _Session()
+
+    scan_id = "sandbox-role"
+    backend_name = f"test-{scan_id}"
+    _use_backend(monkeypatch, backend_name, _backend, supports_bind_mounts=True)
+    try:
+        bundle = await session_manager.create_or_reuse(
+            scan_id, image="img", local_sources=[_source("repo", str(tmp_path))]
+        )
+        await bundle["caido_client"].aclose()
+    finally:
+        await session_manager.cleanup(scan_id)
+        _forget_backend(backend_name)
+
+    env = await captured["manifest"].environment.resolve()
+    assert env["STRIX_SANDBOX_ROLE"] == "1"
