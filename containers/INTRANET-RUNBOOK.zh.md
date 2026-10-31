@@ -23,31 +23,59 @@ docker save strix-allinone:<tag> | gzip > strix-allinone-<tag>.tar.gz
 scp strix-allinone-<tag>.tar.gz user@内网机:/data/
 ```
 
-### 替代：走镜像仓库分发（推荐，断点续传且只同步变化的层）
+### 替代：走 GHCR 私有仓库分发（推荐，断点续传且只同步变化的层；按私有化部署写，包保持私有）
+
+**推送侧（Codespace / 联网机）**——注意路径**全小写**（GitHub 用户名含大写也要转成小写）：
 
 ```bash
-# GHCR（Codespace/有 GitHub 的环境）
-docker tag strix-allinone:<tag> ghcr.io/<user>/strix-allinone:<tag>
-echo "$(gh auth token)" | docker login ghcr.io -u <user> --password-stdin   # 需 write:packages
-docker push ghcr.io/<user>/strix-allinone:<tag>
-# GHCR 包默认私有：包设置改 Public 免登录拉取，或目标机同样 docker login
+docker tag strix-allinone:<tag> ghcr.io/<github用户名小写>/strix-allinone:<tag>
 
-# 国内目标机拉 ghcr 慢/超时 → 用阿里云 ACR 个人版
+# ⚠ Codespace 自带的 GITHUB_TOKEN 是 App 签发 token（ghu_ 开头），没有建包权限，
+#   必须先切到本人登录并补 write:packages。以下三步在同一个终端里完成：
+unset GITHUB_TOKEN
+gh auth login -h github.com -s write:packages
+#   交互：GitHub.com → HTTPS → Login with a web browser
+#   终端显示一次性码（形如 ABCD-1234），在任意浏览器打开
+#   https://github.com/login/device 登录后输入该码并 Authorize
+gh auth status        # 确认：不再显示 (GITHUB_TOKEN)，Token scopes 含 write:packages
+
+echo "$(gh auth token)" | docker login ghcr.io -u <github用户名> --password-stdin
+docker push ghcr.io/<github用户名小写>/strix-allinone:<tag>
+```
+
+**拉取侧（目标机，私有包必须登录）**——创建 classic PAT：
+GitHub 网页 → Settings → Developer settings → Personal access tokens → **Tokens (classic)**
+→ Generate，只勾 `read:packages`，然后：
+
+```bash
+echo "ghp_<read:packages的PAT>" | docker login ghcr.io -u <github用户名> --password-stdin
+docker pull ghcr.io/<github用户名小写>/strix-allinone:<tag>
+docker tag ghcr.io/<github用户名小写>/strix-allinone:<tag> strix-allinone:<tag>
+```
+
+（不 retag 也可：`STRIX_IMAGE` 直接填完整 registry 引用，本地已有同引用镜像时 spawn 不会重新拉。）
+
+**踩坑速查（实测遇到过）：**
+
+| 报错 | 原因 → 处理 |
+|---|---|
+| `installation not allowed to Create organization package` | 用的是 Codespace 的 GITHUB_TOKEN（ghu_）→ 按上面 unset + gh auth login 切本人身份 |
+| `The token provided does not match expected scopes` | token 缺 `write:packages`，或**拿到新 token 后没有重新 docker login**（三步链：带权限的 token → docker login → push，缺一不可） |
+| `no matches for verify` / 路径报错 | 包路径必须全小写 |
+| PAT 登录后仍 401/403 | 用了 fine-grained PAT——GHCR 对它支持不全，换 **classic** |
+| 找不到包设置页 | 直达 `https://github.com/users/<用户名>/packages`，包页右上 Package settings |
+
+（包默认就是私有；不需要动 Public。若某天想免登录拉取再改 Public，与本私有化流程二选一。）
+
+**国内目标机拉 ghcr 慢/超时** → 换阿里云 ACR 个人版（同为私有仓库）：
+
+```bash
 docker login registry.cn-hangzhou.aliyuncs.com --username <阿里云账号>
 docker tag strix-allinone:<tag> registry.cn-hangzhou.aliyuncs.com/<命名空间>/strix-allinone:<tag>
 docker push registry.cn-hangzhou.aliyuncs.com/<命名空间>/strix-allinone:<tag>
 ```
 
-目标机拉取后建议 retag 成短名：
-
-```bash
-docker pull <registry>/<...>/strix-allinone:<tag>
-docker tag <registry>/<...>/strix-allinone:<tag> strix-allinone:<tag>
-```
-
-（不 retag 也可：`STRIX_IMAGE` 直接填完整 registry 引用，本地已有同引用镜像时 spawn 不会重新拉。）
-
-> 更新版本 = 联网机重新 build → push → 目标机 pull（同 tag 直接覆盖）。
+> 更新版本 = 联网机重新 build → push → 目标机 pull（同 tag 直接覆盖，已存在的层秒过）。
 
 ## 二、内网机：导入镜像
 
