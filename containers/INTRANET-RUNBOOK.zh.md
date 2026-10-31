@@ -23,7 +23,31 @@ docker save strix-allinone:<tag> | gzip > strix-allinone-<tag>.tar.gz
 scp strix-allinone-<tag>.tar.gz user@内网机:/data/
 ```
 
-> 更新版本 = 联网机重新 build → save → scp → 内网机 load（同 tag 直接覆盖）。
+### 替代：走镜像仓库分发（推荐，断点续传且只同步变化的层）
+
+```bash
+# GHCR（Codespace/有 GitHub 的环境）
+docker tag strix-allinone:<tag> ghcr.io/<user>/strix-allinone:<tag>
+echo "$(gh auth token)" | docker login ghcr.io -u <user> --password-stdin   # 需 write:packages
+docker push ghcr.io/<user>/strix-allinone:<tag>
+# GHCR 包默认私有：包设置改 Public 免登录拉取，或目标机同样 docker login
+
+# 国内目标机拉 ghcr 慢/超时 → 用阿里云 ACR 个人版
+docker login registry.cn-hangzhou.aliyuncs.com --username <阿里云账号>
+docker tag strix-allinone:<tag> registry.cn-hangzhou.aliyuncs.com/<命名空间>/strix-allinone:<tag>
+docker push registry.cn-hangzhou.aliyuncs.com/<命名空间>/strix-allinone:<tag>
+```
+
+目标机拉取后建议 retag 成短名：
+
+```bash
+docker pull <registry>/<...>/strix-allinone:<tag>
+docker tag <registry>/<...>/strix-allinone:<tag> strix-allinone:<tag>
+```
+
+（不 retag 也可：`STRIX_IMAGE` 直接填完整 registry 引用，本地已有同引用镜像时 spawn 不会重新拉。）
+
+> 更新版本 = 联网机重新 build → push → 目标机 pull（同 tag 直接覆盖）。
 
 ## 二、内网机：导入镜像
 
