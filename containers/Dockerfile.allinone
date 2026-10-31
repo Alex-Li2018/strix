@@ -30,8 +30,11 @@ FROM ${SANDBOX_BASE}
 # Java security toolkit (all-in-one only; not in the published sandbox image)
 # ---------------------------------------------------------------------------
 USER root
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends maven fontconfig && \
+# /usr/share/man/man1 is missing in this base; Java-ish packages create
+# update-alternatives symlinks there during postinst and dpkg errors out.
+RUN mkdir -p /usr/share/man/man1 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends fontconfig && \
     (apt-get install -y --no-install-recommends libgtk-3-0 || \
       apt-get install -y --no-install-recommends libgtk-3-0t64 || \
       echo "WARNING: GTK3 not found under either package name; MAT/SWT headless may fail") && \
@@ -63,6 +66,16 @@ RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSIO
     unzip -q /tmp/gradle.zip -d /opt && \
     ln -s "/opt/gradle-${GRADLE_VERSION}/bin/gradle" /usr/local/bin/gradle && \
     rm /tmp/gradle.zip
+
+# Maven from the official distribution too: apt maven drags in a default JRE
+# whose postinst trips over this man-page-less base, and the tarball pins the
+# version. JAVA_HOME (Temurin 17) supplies the JDK; mvn needs nothing else.
+ARG MAVEN_VERSION=3.9.9
+RUN curl -fsSL "https://repo1.maven.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+      -o /tmp/maven.tgz && \
+    tar -xzf /tmp/maven.tgz -C /opt && \
+    ln -s "/opt/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/local/bin/mvn && \
+    rm /tmp/maven.tgz
 
 # SpotBugs + FindSecBugs: bytecode SAST for compiled targets.
 ARG SPOTBUGS_VERSION=4.8.6
