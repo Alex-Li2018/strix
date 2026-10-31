@@ -110,7 +110,7 @@ docker run --rm -it --network host \
   -v /本地项目路径:/workspace/target-src:ro \
   strix-allinone:<tag> \
   -n -t /workspace/target-src -t http://localhost:8080 \
-     --scan-mode quick --max-budget 10
+     --scan-mode deep --max-budget 10
 ```
 
 只想审代码就删掉第二个 `-t`；只想黑盒打服务就删掉第一个 `-t` 和源码挂载（见 3.2）。
@@ -124,6 +124,9 @@ docker run --rm -it --network host \
 - `openai/glm-5.3` 的 `openai/` 前缀 = 按 OpenAI 协议调用（GLM 兼容该协议），
   配合 `LLM_API_BASE` 指到智谱官方端点；key 用智谱平台的 API Key
 - `STRIX_REPORT_LANGUAGE` 只翻译**叙述文字**，代码/payload/标识符/CVSS 向量保持原样
+- `--scan-mode deep` = 深度审查（strix 缺省就是 deep），跑得更久更彻底；赶时间可换 `quick`
+- `--max-budget 10` 是**模型花费上限（美元）**，不是"只查 10 个问题"——漏洞数量不设限，
+  到预算就干净收尾。GLM 很便宜，10 美元很难花完，纯当保险；不想要可整段删掉
 - ⚠ **中文报告需要镜像含提交 `a2a74328`（即 `javatest2` 及以后）**。旧 `javatest`
   会忽略该变量（报告仍是英文），且还需要额外挂载 `-v /usr/bin/true:/usr/local/bin/docker:ro`
   才能通过 docker 预检（见第五节常见问题）
@@ -141,7 +144,7 @@ docker run --rm -it --network host \
   -e STRIX_REPORT_LANGUAGE='简体中文' \
   -v "$PWD/strix_runs:/workspace/strix_runs" \
   strix-allinone:<tag> \
-  -n -t http://<目标地址>:<端口> --scan-mode quick --max-budget 10
+  -n -t http://<目标地址>:<端口> --scan-mode deep --max-budget 10
 ```
 
 参数说明（两种模式通用）：
