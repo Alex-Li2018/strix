@@ -31,12 +31,30 @@ FROM ${SANDBOX_BASE}
 # ---------------------------------------------------------------------------
 USER root
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jdk maven libgtk-3-0 fontconfig && \
+    apt-get install -y --no-install-recommends maven fontconfig && \
+    (apt-get install -y --no-install-recommends libgtk-3-0 || \
+      apt-get install -y --no-install-recommends libgtk-3-0t64 || \
+      echo "WARNING: GTK3 not found under either package name; MAT/SWT headless may fail") && \
     (apt-get install -y --no-install-recommends jadx || \
       echo "WARNING: jadx not in apt; install from GitHub releases manually") && \
     (apt-get install -y --no-install-recommends procyon-decompiler || \
       echo "WARNING: procyon-decompiler not in apt; CFR remains the decompiler fallback") && \
     rm -rf /var/lib/apt/lists/*
+
+# JDK 17, pinned via Eclipse Temurin. Kali rolling no longer packages
+# openjdk-17 (the apt JDK would also drift with the base image), so pull the
+# current 17 GA tarball — the API resolves "latest 17" to a concrete build.
+# JAVA_HOME is fixed at /opt/java-home and prepended to PATH so mvn/gradle,
+# the tool wrappers, and MAT's launcher all resolve the same JDK.
+RUN set -eux; \
+    jdk_arch=x64; \
+    if [ "$(dpkg --print-architecture)" = arm64 ]; then jdk_arch=aarch64; fi; \
+    mkdir -p /opt/java-home && \
+    curl -fsSL "https://api.adoptium.net/v3/binary/latest/17/ga/linux/${jdk_arch}/jdk/hotspot/normal/eclipse" \
+      | tar -xz -C /opt/java-home --strip-components=1 && \
+    /opt/java-home/bin/java -version
+ENV JAVA_HOME=/opt/java-home
+ENV PATH="/opt/java-home/bin:${PATH}"
 
 # Kali's apt gradle lags far behind; use the official distribution.
 ARG GRADLE_VERSION=8.14
@@ -45,10 +63,6 @@ RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSIO
     unzip -q /tmp/gradle.zip -d /opt && \
     ln -s "/opt/gradle-${GRADLE_VERSION}/bin/gradle" /usr/local/bin/gradle && \
     rm /tmp/gradle.zip
-
-# Arch-independent JAVA_HOME (the apt JDK path embeds the arch triplet).
-RUN ln -sfn "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /opt/java-home
-ENV JAVA_HOME=/opt/java-home
 
 # SpotBugs + FindSecBugs: bytecode SAST for compiled targets.
 ARG SPOTBUGS_VERSION=4.8.6
