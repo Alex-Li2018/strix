@@ -139,7 +139,7 @@ The image plays both roles: started manually it runs `strix` (the entrypoint aut
 
 ### Java toolkit & private Maven/Gradle mirrors
 
-The all-in-one image adds a Java security layer on top of the sandbox toolchain: OpenJDK 17, Maven, Gradle, jadx, SpotBugs + FindSecBugs, CFR, OWASP Dependency-Check, ysoserial, marshalsec, and JNDI-Exploit-Kit — matched by the `java`, `jadx`, `spotbugs_findsecbugs`, `dependency_check`, and `java_deserialization` agent skills.
+The all-in-one image adds a Java security layer on top of the sandbox toolchain: OpenJDK 17, Maven, Gradle, jadx (with CFR and procyon as fallback decompilers), SpotBugs + FindSecBugs, OWASP Dependency-Check, ysoserial, marshalsec, JNDI-Exploit-Kit, SerializationDumper, and headless Eclipse MAT for heapdump analysis — matched by the `java`, `jadx`, `spotbugs_findsecbugs`, `dependency_check`, `java_deserialization`, and `mat_heapdump` agent skills.
 
 To route `mvn`/`gradle` dependency resolution through a private repository (Nexus/Artifactory), pass the mirror settings — they are forwarded into every sandbox and rendered as `~/.m2/settings.xml` (`mirrorOf external:*`) and `~/.gradle/init.gradle` automatically:
 

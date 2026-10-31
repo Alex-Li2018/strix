@@ -37,13 +37,19 @@ jadx -d /workspace/out-app app/BOOT-INF/classes/
 ls app/BOOT-INF/lib/ | sort > /workspace/deps.txt   # exact versions for CVE correlation
 ```
 
-## CFR Fallback
+## CFR / procyon Fallbacks
 
 When jadx output for a critical class is broken, retry that class with CFR (often better on newer bytecode):
 
 ```bash
 cfr app/BOOT-INF/classes/com/example/Svc.class --outputdir /workspace/out-cfr
 cfr lib/some-dep.jar --outputdir /workspace/out-cfr
+```
+
+If CFR also fails on the class, try procyon — three decompilers reconstruct constructs differently, and one often succeeds where the others give up:
+
+```bash
+procyon-decompiler -jar app.jar -o /workspace/out-procyon
 ```
 
 ## Auditing the Decompiled Tree

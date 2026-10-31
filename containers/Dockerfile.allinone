@@ -31,9 +31,11 @@ FROM ${SANDBOX_BASE}
 # ---------------------------------------------------------------------------
 USER root
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jdk maven && \
+    apt-get install -y --no-install-recommends openjdk-17-jdk maven libgtk-3-0 fontconfig && \
     (apt-get install -y --no-install-recommends jadx || \
       echo "WARNING: jadx not in apt; install from GitHub releases manually") && \
+    (apt-get install -y --no-install-recommends procyon-decompiler || \
+      echo "WARNING: procyon-decompiler not in apt; CFR remains the decompiler fallback") && \
     rm -rf /var/lib/apt/lists/*
 
 # Kali's apt gradle lags far behind; use the official distribution.
@@ -104,6 +106,46 @@ RUN if curl -fsSL "https://github.com/beichengzk/JNDI-Exploit-Kit/releases/downl
       chmod +x /usr/local/bin/jndi-exploit-kit; \
     else \
       echo "WARNING: JNDI-Exploit-Kit download failed; skipping"; \
+    fi
+
+# SerializationDumper: parse Java serialization streams into their class/field
+# structure — the "know the classpath before picking a ysoserial chain" step.
+# Small Java tool with no release artifacts, so clone and build it (the JDK
+# installed above has javac/jar). CLI: -f = hex-ascii file, -r = raw bytes.
+RUN git clone --depth 1 https://github.com/NickstaDB/SerializationDumper \
+      /opt/java-tools/SerializationDumper && \
+    cd /opt/java-tools/SerializationDumper && \
+    bash build.sh >/dev/null && \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/SerializationDumper/SerializationDumper.jar "$@"\n' \
+      > /usr/local/bin/serialization-dumper && \
+    chmod +x /usr/local/bin/serialization-dumper
+
+# Eclipse MAT (Memory Analyzer), headless: parse hprof heapdumps (e.g. Spring
+# /actuator/heapdump) into leak-suspect reports and OQL object hunting. The
+# GTK3/fontconfig stack its bundled SWT needs is installed above (chromium in
+# the base image already provides most of it). Best-effort: artifacts live
+# under .../mat/<ver>/rcp/ with a build timestamp embedded in the zip name
+# (MemoryAnalyzer-1.17.0.20260601-linux.gtk.<arch>.zip), so scrape the
+# directory listing for this architecture's artifact. ParseHeapDump.sh
+# resolves its sibling MemoryAnalyzer via $0, so expose a wrapper (a plain
+# symlink under /usr/local/bin would break that resolution).
+ARG MAT_VERSION=1.17.0
+RUN set -eux; \
+    mat_arch=x86_64; \
+    if [ "$(dpkg --print-architecture)" = arm64 ]; then mat_arch=aarch64; fi; \
+    url_base="https://download.eclipse.org/mat/${MAT_VERSION}/rcp"; \
+    mat_zip="$(curl -fsSL "${url_base}/" \
+      | grep -oE "MemoryAnalyzer-[0-9.]+-linux\.gtk\.${mat_arch}\.zip" \
+      | sort -u | head -1 || true)"; \
+    if [ -n "$mat_zip" ]; then \
+      curl -fsSL "${url_base}/${mat_zip}" -o /tmp/mat.zip && \
+      unzip -q /tmp/mat.zip -d /opt && rm /tmp/mat.zip && \
+      sed -i 's/-Xmx[0-9]*[gmg]/-Xmx4g/' /opt/mat/MemoryAnalyzer.ini && \
+      printf '#!/bin/bash\nexec /opt/mat/ParseHeapDump.sh "$@"\n' \
+        > /usr/local/bin/mat-parse-heapdump && \
+      chmod +x /usr/local/bin/mat-parse-heapdump; \
+    else \
+      echo "WARNING: MAT artifact not found for ${mat_arch}; skipping heapdump tooling"; \
     fi
 
 # Private Maven/Gradle mirror support: rendered at container start by the

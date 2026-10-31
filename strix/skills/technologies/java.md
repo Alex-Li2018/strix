@@ -1,20 +1,20 @@
 ---
 name: java
-description: Java/JVM application testing strategy — decompile-then-audit workflow for jars/wars/EARs and build files, bytecode SAST, dependency CVE correlation, deserialization and JNDI exploitation, and framework-specific checks (Spring, Struts, Shiro, fastjson).
+description: Java/JVM application testing strategy — decompile-then-audit workflow for jars/wars/EARs and build files, bytecode SAST, dependency CVE correlation, deserialization and JNDI exploitation, heapdump credential hunting, and framework-specific checks (Spring, Struts, Shiro, fastjson).
 ---
 
 # Java Applications
 
 Use this skill whenever the target is JVM-based: source trees with `pom.xml`/`build.gradle`, built artifacts (`*.jar`, `*.war`, `*.ear`), Spring Boot fat jars, or a running app whose stack fingerprints as Java.
 
-Pair with `source_aware_sast` for source trees, `jadx` for decompilation, `spotbugs_findsecbugs` for bytecode audits, `dependency_check` for dependency CVEs, and `java_deserialization` once a deserialization or JNDI sink is suspected.
+Pair with `source_aware_sast` for source trees, `jadx` for decompilation, `spotbugs_findsecbugs` for bytecode audits, `dependency_check` for dependency CVEs, `java_deserialization` once a deserialization or JNDI sink is suspected, and `mat_heapdump` when an exposed heapdump or hprof file is in reach.
 
 ## Decision Tree
 
 1. **Have source?** (`src/main/java` present) → audit directly: `semgrep` with Java rules + `spotbugs` on `target/classes` after `mvn -q -DskipTests package`. Skip decompilation.
 2. **Only build files?** (`pom.xml`/`build.gradle` without sources) → run dependency analysis first (`dependency_check`), fingerprint the framework versions, then decide whether to fetch/audit dependencies' code paths that touch user input.
 3. **Only artifacts?** (`*.jar`/`*.war`) → decompile first (`jadx`), then audit the decompiled tree like source. For fat jars, unpack first: `unzip app.jar -d app/` then handle `BOOT-INF/classes/` (application code) and `BOOT-INF/lib/` (dependencies).
-4. **Black-box only?** → fingerprint (response headers, `/actuator`, stack traces, error pages), try nuclei Java tags (log4shell, shiro, fastjson, struts), and probe deserialization endpoints (`java_deserialization`).
+4. **Black-box only?** → fingerprint (response headers, `/actuator`, stack traces, error pages), try nuclei Java tags (log4shell, shiro, fastjson, struts), pull `/actuator/heapdump` if exposed (`mat_heapdump`), and probe deserialization endpoints (`java_deserialization`).
 
 ## What to Look For (Java-specific)
 
@@ -26,7 +26,7 @@ Pair with `source_aware_sast` for source trees, `jadx` for decompilation, `spotb
 - **Path traversal**: `new File(userInput)`, `Paths.get`, `ZipEntry` extraction without canonical-path checks (zip-slip).
 - **Weak crypto**: `DES`, `ECB`, `MD5`/`SHA1` for passwords, hardcoded keys (`SecretKeySpec` with literal).
 - **SSRF**: `URL.openConnection`, `HttpURLConnection`, `RestTemplate` with user-controlled URLs.
-- **Spring exposure**: actuator endpoints (`/actuator/env`, `/heapdump` — heapdump leaks credentials), `/actuator/gateway` RCE on Spring Cloud Gateway <3.1.1, misconfigured static routing.
+- **Spring exposure**: actuator endpoints (`/actuator/env`, `/actuator/configprops`, `/actuator/heapdump` — heapdump hands over live in-memory credentials, see `mat_heapdump`), `/actuator/gateway` RCE on Spring Cloud Gateway <3.1.1, misconfigured static routing.
 - **Permissive CORS / auth bypass** via Spring Security config (`permitAll`, missing method security).
 
 ## Framework Fingerprinting Cheatsheet

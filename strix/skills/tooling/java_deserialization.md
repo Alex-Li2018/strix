@@ -14,6 +14,17 @@ Order of operations: **detect → confirm reachability → prove with a benign c
 - `Content-Type: application/x-java-serialized-object` headers; viewstate without MAC (`javax.faces.ViewState` unencrypted).
 - In source/decompiled code: `ObjectInputStream.readObject` reachable from request bytes (see `jadx` greps), `XMLDecoder`, `JSON.parseObject(..., Feature.SupportAutoType)`.
 
+## SerializationDumper (read the stream before picking a chain)
+
+When you hold an actual serialized blob, dump it first — the class/field structure it reveals is a direct probe of what the target deserializes:
+
+```bash
+echo 'rO0AB...' | base64 -d > /tmp/blob.bin
+serialization-dumper -r /tmp/blob.bin     # -r = raw bytes; -f expects hex-ascii text
+```
+
+Match the dumped classes against the target's classpath (`BOOT-INF/lib/` versions, see `jadx`) and only then generate a payload with the gadget chain that is actually present. Blind-firing chains you have not verified against the classpath crashes workers and proves nothing.
+
 ## ysoserial (Java-native gadget chains)
 
 ```bash
