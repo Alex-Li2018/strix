@@ -34,7 +34,7 @@ USER root
 # update-alternatives symlinks there during postinst and dpkg errors out.
 RUN mkdir -p /usr/share/man/man1 && \
     apt-get update && \
-    apt-get install -y --no-install-recommends fontconfig && \
+    apt-get install -y --no-install-recommends fontconfig docker-cli && \
     (apt-get install -y --no-install-recommends libgtk-3-0 || \
       apt-get install -y --no-install-recommends libgtk-3-0t64 || \
       echo "WARNING: GTK3 not found under either package name; MAT/SWT headless may fail") && \
