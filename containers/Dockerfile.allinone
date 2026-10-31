@@ -40,8 +40,6 @@ RUN mkdir -p /usr/share/man/man1 && \
       echo "WARNING: GTK3 not found under either package name; MAT/SWT headless may fail") && \
     (apt-get install -y --no-install-recommends jadx || \
       echo "WARNING: jadx not in apt; install from GitHub releases manually") && \
-    (apt-get install -y --no-install-recommends procyon-decompiler || \
-      echo "WARNING: procyon-decompiler not in apt; CFR remains the decompiler fallback") && \
     rm -rf /var/lib/apt/lists/*
 
 # JDK 17, pinned via Eclipse Temurin. Kali rolling no longer packages
@@ -96,10 +94,18 @@ RUN mkdir -p /opt/java-tools && \
     printf '#!/bin/bash\nexec java -jar /opt/java-tools/cfr.jar "$@"\n' > /usr/local/bin/cfr && \
     chmod +x /usr/local/bin/cfr
 
+# procyon: third decompiler (jadx -> CFR -> procyon). Not in Kali apt; the
+# GitHub release jar works the same way as CFR's.
+ARG PROCYON_VERSION=0.6.0
+RUN curl -fsSL "https://github.com/mstrobel/procyon/releases/download/v${PROCYON_VERSION}/procyon-decompiler-${PROCYON_VERSION}.jar" \
+      -o /opt/java-tools/procyon.jar && \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/procyon.jar "$@"\n' > /usr/local/bin/procyon-decompiler && \
+    chmod +x /usr/local/bin/procyon-decompiler
+
 # OWASP Dependency-Check (SCA). Best-effort: a failed download warns but does
 # not break the build; trivy still covers dependency CVEs.
 ARG DEPCHECK_VERSION=12.1.0
-RUN if curl -fsSL "https://github.com/jeremylong/DependencyCheck/releases/download/v${DEPCHECK_VERSION}/dependency-check-${DEPCHECK_VERSION}.zip" \
+RUN if curl -fsSL "https://github.com/jeremylong/DependencyCheck/releases/download/v${DEPCHECK_VERSION}/dependency-check-${DEPCHECK_VERSION}-release.zip" \
       -o /tmp/depcheck.zip; then \
       unzip -q /tmp/depcheck.zip -d /opt && \
       ln -s "/opt/dependency-check/bin/dependency-check.sh" /usr/local/bin/dependency-check && \
@@ -125,15 +131,13 @@ RUN set -eux; \
     printf '#!/bin/bash\nexec java -jar /opt/java-tools/marshalsec.jar "$@"\n' > /usr/local/bin/marshalsec && \
     chmod +x /usr/local/bin/ysoserial /usr/local/bin/marshalsec
 
-# JNDI-Exploit-Kit: best-effort (release assets on forks move around).
-ARG JNDIKIT_VERSION=1.6
-RUN if curl -fsSL "https://github.com/beichengzk/JNDI-Exploit-Kit/releases/download/v${JNDIKIT_VERSION}/JNDI-Exploit-Kit-${JNDIKIT_VERSION}-snAPSHOT-all.jar" \
-      -o /opt/java-tools/jndi-exploit-kit.jar; then \
-      printf '#!/bin/bash\nexec java -jar /opt/java-tools/jndi-exploit-kit.jar "$@"\n' > /usr/local/bin/jndi-exploit-kit && \
-      chmod +x /usr/local/bin/jndi-exploit-kit; \
-    else \
-      echo "WARNING: JNDI-Exploit-Kit download failed; skipping"; \
-    fi
+# JNDI-Exploit-Kit: no release assets exist on any reliable fork; the
+# original pimps repo ships a prebuilt jar in its working tree.
+RUN git clone --depth 1 https://github.com/pimps/JNDI-Exploit-Kit /tmp/jndikit && \
+    cp /tmp/jndikit/JNDI-Exploit-Kit.jar /opt/java-tools/jndi-exploit-kit.jar && \
+    rm -rf /tmp/jndikit && \
+    printf '#!/bin/bash\nexec java -jar /opt/java-tools/jndi-exploit-kit.jar "$@"\n' > /usr/local/bin/jndi-exploit-kit && \
+    chmod +x /usr/local/bin/jndi-exploit-kit
 
 # SerializationDumper: parse Java serialization streams into their class/field
 # structure — the "know the classpath before picking a ysoserial chain" step.

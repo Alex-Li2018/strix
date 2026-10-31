@@ -49,7 +49,7 @@ cfr lib/some-dep.jar --outputdir /workspace/out-cfr
 If CFR also fails on the class, try procyon — three decompilers reconstruct constructs differently, and one often succeeds where the others give up:
 
 ```bash
-procyon-decompiler -jar app.jar -o /workspace/out-procyon
+procyon-decompiler -jar app.jar --output-directory /workspace/out-procyon
 ```
 
 ## Auditing the Decompiled Tree
