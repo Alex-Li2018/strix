@@ -221,6 +221,7 @@ jq '.machine_observed.skills_exercised' "$RUN/coverage.json"   # 实际用到的
 | 现象 | 原因与处理 |
 |---|---|
 | `permission denied .../docker.sock` | 缺 `--group-add "$(stat -c %g /var/run/docker.sock)"` |
+| `PermissionError: '/workspace/strix_runs/...'` 建目录失败 | 宿主机的 strix_runs 目录是 root 建的，容器内 pentester（uid 1000）写不进：宿主机 `chown -R 1000:1000 <挂载的strix_runs目录>`（或 `chmod 777`）。只需处理 strix_runs——源码目录是只读挂载，不涉及 |
 | `FAILED TO PULL ghcr.io/...` | `STRIX_IMAGE` 未设或与导入 tag 不一致 |
 | `DOCKER NOT INSTALLED` | 旧版镜像（< eb0f43d8）缺 docker-cli；新版已内置，出现即说明用的是旧 tag |
 | 旧镜像 docker 预检不过但 CLI 明明有 | 旧 `javatest` 的自检逻辑问题：加 `-v /usr/bin/true:/usr/local/bin/docker:ro` 绕过；或直接换 `javatest2` 及以后 |
