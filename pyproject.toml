@@ -231,6 +231,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Curated Simplified Chinese report labels legitimately use fullwidth
+# punctuation; RUF001 flags it as an ambiguous lookalike.
+"strix/report/labels.py" = ["RUF001"]
+# Assertions quote those same Chinese strings.
+"tests/test_report_labels.py" = ["RUF001"]
 # Test doubles use fixture tokens/passwords and match a callee signature whose
 # args they intentionally ignore.
 "tests/test_viewer_auth.py" = ["S105", "S106", "ARG001"]

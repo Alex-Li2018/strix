@@ -17,6 +17,7 @@ from strix.report.coverage import write_coverage
 from strix.report.pricing import resolve_litellm_model
 from strix.report.sarif import write_sarif
 from strix.report.writer import (
+    format_final_report,
     read_run_record,
     write_executive_report,
     write_run_record,
@@ -808,22 +809,7 @@ class ReportState:
         self.save_run_data(status=status)
 
     def _format_final_scan_result(self, scan_results: dict[str, Any]) -> str:
-        return f"""# Executive Summary
-
-{str(scan_results.get("executive_summary", "")).strip()}
-
-# Methodology
-
-{str(scan_results.get("methodology", "")).strip()}
-
-# Technical Analysis
-
-{str(scan_results.get("technical_analysis", "")).strip()}
-
-# Recommendations
-
-{str(scan_results.get("recommendations", "")).strip()}
-"""
+        return format_final_report(scan_results)
 
     def _coverage_document(self) -> dict[str, Any] | None:
         """Assemble the coverage record, or None when it can't be built.

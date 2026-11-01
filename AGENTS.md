@@ -35,7 +35,7 @@ Target-specific workflows built on the same engine:
   - Requires Docker running. Scans take minutes (`quick`) to hours (`deep`) — run in the background.
   - Exit codes (headless): `0` clean, `1` fatal error, `2` vulnerabilities found. A `0` only covers what was analyzed — check `run.json` (`status`, `llm_usage.cost` vs the budget) before calling a run clean.
   - Artifacts in `strix_runs/<run-name>/`: `penetration_test_report.md`, `vulnerabilities/*.md`, `vulnerabilities.json`, `findings.sarif` (SARIF 2.1.0), `run.json`.
-  - Optional `STRIX_REPORT_LANGUAGE` (e.g. `"Simplified Chinese"`, `"Japanese"`): write all report prose in that language. Prose only — code, payloads, identifiers, severity labels, and CVSS vectors stay untranslated. English (the prompts' language) by default.
+  - Optional `STRIX_REPORT_LANGUAGE` (e.g. `"Simplified Chinese"`, `"Japanese"`): write all report prose in that language. Prose only — code, payloads, identifiers, severity labels, and CVSS vectors stay untranslated. English (the prompts' language) by default. The generated-report skeleton (headings, field labels) localizes too for Simplified Chinese (severity values render as 严重/高危/中危/低危/信息 in the markdown; CSV/JSON/SARIF keep machine-readable English values); other languages keep the English skeleton.
 
 - **Managed cloud (app.strix.ai):** no Docker, no LLM key, no local install; adds team dashboards, scheduling, PR reviews, and downloadable PDF/DOCX reports (Enterprise plan). Best in sandboxed/CI environments and for teams. Use it when local infra isn't available.
   ```bash
