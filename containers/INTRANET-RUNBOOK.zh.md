@@ -224,6 +224,8 @@ jq '.machine_observed.skills_exercised' "$RUN/coverage.json"   # 实际用到的
 | `FAILED TO PULL ghcr.io/...` | `STRIX_IMAGE` 未设或与导入 tag 不一致 |
 | `DOCKER NOT INSTALLED` | 旧版镜像（< eb0f43d8）缺 docker-cli；新版已内置，出现即说明用的是旧 tag |
 | 旧镜像 docker 预检不过但 CLI 明明有 | 旧 `javatest` 的自检逻辑问题：加 `-v /usr/bin/true:/usr/local/bin/docker:ro` 绕过；或直接换 `javatest2` 及以后 |
+| 容器内一切域名解析失败（`Could not resolve host`），宿主机 curl 却正常 | Docker 把宿主机 resolv.conf 里"非全局"的 DNS（运营商 CGNAT 段如 `100.64/10`）过滤成 `8.8.8.8`，国内不通。修法：`/etc/docker/daemon.json` 写 `{"dns": ["<宿主机nameserver>"]}` 后 `systemctl restart docker`（推荐，编排器+沙箱全修好）；或临时给 `docker run` 加 `--dns <宿主机nameserver>`（只修编排器，沙箱仍坏，扫域名目标会踩） |
+| LLM CONNECTION FAILED / `HTTP 000`，且 LLM 端点走 http 通、https 不通 | 部分内网出口只放行 http：`LLM_API_BASE` 保持 `http://` 即可（先在宿主机 curl 两种协议各测一次，以实测为准） |
 | 目标连不上 | 编排器已用 host 网络，等价于宿主机直连：先在宿主机 `curl` 目标验证可达性 |
 | LLM 超时/401 | 宿主机上 `curl $LLM_API_BASE/models` 验证私服可达与 key 有效 |
 | 成本显示异常 | 未设单价 env，或模型 id 与私服不匹配 |
